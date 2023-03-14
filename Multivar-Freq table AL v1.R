@@ -17,10 +17,10 @@ library(broom)
 
 ############################################################################################################################################
 
-### Main code for function
+### Function code
 
 Multivar_Freq_func <- function(func_data, func_data_baselines, func_outcome, func_explanatory_vars) {
-
+  
   # Compensate if baselines not set
   func_data_baselines <- if(is.data.frame(func_data_baselines)) func_data_baselines else func_data
   
@@ -41,14 +41,14 @@ Multivar_Freq_func <- function(func_data, func_data_baselines, func_outcome, fun
     map(.f = 
           ~{func_data %>%
               group_by(.data[[func_outcome[]]]) %>%     
-              count(.data[[.x]]) %>%    
+              count(.data[[all_of(.x)]]) %>%    
               pivot_wider(              
                 names_from = .data[[func_outcome[]]],
                 values_from = n) %>% 
-              drop_na(.data[[.x]]) %>%         
+              drop_na(.data[[all_of(.x)]]) %>%         
               rename("category" = all_of(.x)) %>% 
               mutate(category = as.character(category)) %>%
-              mutate(variable = .x)}) %>%
+              mutate(variable = all_of(.x))}) %>%
     
     bind_rows() %>%
     mutate(term = paste0(variable,category)) %>%
@@ -63,11 +63,18 @@ Multivar_Freq_func <- function(func_data, func_data_baselines, func_outcome, fun
         data = func_data_baselines) %>%
     tidy(exponentiate = TRUE, conf.int = TRUE) %>%
     
+    ### Replace the above code chunk with the following chunk to do individual univariable regressions instead
+    # outcome_multi <- func_explanatory_vars %>%
+    # str_c(paste0(func_outcome," ~ "), .) %>%
+    # map(.f = ~glm(formula = as.formula(all_of(.x)), family = "binomial", data = func_data_baselines)) %>%
+    # map(.f = ~tidy(all_of(.x), exponentiate = TRUE, conf.int = TRUE)) %>%
+    # bind_rows() %>% 
+    
     mutate(across(where(is.numeric), round, digits = 2)) %>%
     mutate(outcome_CI=paste0(sprintf("%.2f", conf.low),"-", sprintf("%.2f", conf.high))) %>%
     rename(outcome_OR=estimate, outcome_CI_low=conf.low, outcome_CI_high=conf.high)
   
-   # Join count and regression data
+  # Join count and regression data
   multivar_freq <- outcome_counts %>%
     left_join(outcome_multi, by = "term")
   
@@ -76,9 +83,13 @@ Multivar_Freq_func <- function(func_data, func_data_baselines, func_outcome, fun
     mutate(outcome_total = format(round(as.numeric(outcome_total), 0), nsmall=0, big.mark=",")) %>%
     mutate(outcome_Y = format(round(as.numeric(outcome_Y), 0), nsmall=0, big.mark=",")) %>%
     mutate(outcome_OR_CI = paste0(sprintf(outcome_OR, fmt = '%#.2f'), " (", outcome_CI, ")")) %>%
+    ### Note, the select statement below can be altered to add other parameters, such as p.value
     select(variable, category, outcome_total, outcome_Y, outcome_OR_CI) %>%
     mutate_all(~replace(., . == "NA (NA)", "*")) %>%
     rename(variable=variable,category=category,n=outcome_total) %>%
+    mutate(outcome_OR_CI=(if_else(grepl("NA",outcome_OR_CI),"NA",outcome_OR_CI))) %>%
+    mutate(n=(if_else(n=="NA",outcome_Y,n))) %>%
+    mutate(outcome_Y=(if_else(outcome_Y=="NA","0",outcome_Y))) %>%
     rename(!!paste0(func_outcome,"_n"):=outcome_Y) %>%
     rename(!!paste0(func_outcome,"_OR"):=outcome_OR_CI)
   
